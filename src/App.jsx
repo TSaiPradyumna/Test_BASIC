@@ -1,342 +1,194 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { 
-  FileSpreadsheet, 
-  RefreshCw, 
-  Activity, 
-  Cpu, 
-  Wifi, 
-  Clock, 
-  Users, 
-  TrendingUp, 
-  Layers,
-  AlertTriangle
-} from 'lucide-react';
+import { useEffect, useState } from 'react';
 
-export default function App() {
-  const [records, setRecords] = useState([]);
-  const [systemHealth, setSystemHealth] = useState({ cpuUsage: 0, networkLoad: 0, dbLatencyMs: 0 });
-  const [lastUpdated, setLastUpdated] = useState(null);
-  const [fetchInterval, setFetchInterval] = useState(3000); // 3 seconds default
-  const [isLoading, setIsLoading] = useState(false);
-  const [isConnected, setIsConnected] = useState(true);
-  const [updatedRowIds, setUpdatedRowIds] = useState(new Set());
-  const [errorMsg, setErrorMsg] = useState(null);
+function App() {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  // Store previous record values to detect changes
-  const prevRecordsRef = useRef({});
+  useEffect(() => {
+    fetch('/api/excel')
+      .then((res) => {
+        if (!res.ok) throw new Error('Failed to fetch data from server');
+        return res.json();
+      })
+      .then((res) => {
+        if (res.success) {
+          setItems(res.data);
+        } else {
+          throw new Error(res.error || 'Unknown error fetching data');
+        }
+        setLoading(false);
+      })
+      .catch((err) => {
+        console.error("Error fetching sheet data:", err);
+        setError(err.message);
+        setLoading(false);
+      });
+  }, []);
 
-  const fetchData = async () => {
-    setIsLoading(true);
-    setErrorMsg(null);
-    try {
-      // Cloudflare Pages Function runs at the same origin (/api/excel)
-      const response = await fetch('/api/excel');
-      if (!response.ok) {
-        throw new Error(`HTTP error! Status: ${response.status}`);
-      }
-      const data = await response.json();
-      
-      if (data.success) {
-        setIsConnected(true);
-        setSystemHealth(data.systemHealth);
-        setLastUpdated(new Date(data.timestamp));
+  // --- Derived Metrics Calculations ---
+  const totalItems = items.length;
+  
+  const totalQuantity = items.reduce((sum, item) => {
+    const qty = parseInt(item["Quantity"] || item["QTY"] || 0, 10);
+    return sum + (isNaN(qty) ? 0 : qty);
+  }, 0);
 
-        // Detect which rows have changes in progress, efficiency, or team count
-        const newUpdatedRowIds = new Set();
-        data.records.forEach(record => {
-          const prevRecord = prevRecordsRef.current[record.id];
-          if (prevRecord) {
-            if (
-              prevRecord.progress !== record.progress ||
-              prevRecord.efficiency !== record.efficiency ||
-              prevRecord.activeTeam !== record.activeTeam
-            ) {
-              newUpdatedRowIds.add(record.id);
-            }
-          }
-        });
+  const totalValue = items.reduce((sum, item) => {
+    const qty = parseInt(item["Quantity"] || item["QTY"] || 0, 10);
+    const priceStr = String(item["Price"] || item["RATE"] || "0").replace(/[^0-9.]/g, '');
+    const price = parseFloat(priceStr);
+    return sum + (isNaN(qty) || isNaN(price) ? 0 : qty * price);
+  }, 0);
 
-        // Save reference for next comparison
-        const nextPrevRecords = {};
-        data.records.forEach(r => { nextPrevRecords[r.id] = r; });
-        prevRecordsRef.current = nextPrevRecords;
-
-        setRecords(data.records);
-        setUpdatedRowIds(newUpdatedRowIds);
-
-        // Clear row highlight flashes after 1.2s
-        setTimeout(() => {
-          setUpdatedRowIds(prev => {
-            const next = new Set(prev);
-            newUpdatedRowIds.forEach(id => next.delete(id));
-            return next;
-          });
-        }, 1200);
-      }
-    } catch (err) {
-      console.error("Error fetching dashboard data:", err);
-      setIsConnected(false);
-      setErrorMsg(`Connection Failed: Unable to fetch api data. Make sure Cloudflare Pages Function Wrangler dev server is active.`);
-    } finally {
-      setIsLoading(false);
+  // --- Styled Components / Design Tokens ---
+  const styles = {
+    container: {
+      maxWidth: '1200px',
+      margin: '0 auto',
+      padding: '40px 20px',
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+      backgroundColor: '#f8fafc',
+      minHeight: '100vh',
+      color: '#1e293b'
+    },
+    header: {
+      marginBottom: '32px',
+      borderBottom: '1px solid #e2e8f0',
+      paddingBottom: '20px'
+    },
+    title: {
+      fontSize: '2.25rem',
+      fontWeight: '700',
+      color: '#0f172a',
+      margin: '0 0 8px 0',
+      letterSpacing: '-0.025em'
+    },
+    subtitle: {
+      fontSize: '1rem',
+      color: '#64748b',
+      margin: 0
+    },
+    statsGrid: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+      gap: '20px',
+      marginBottom: '32px'
+    },
+    card: {
+      backgroundColor: '#ffffff',
+      padding: '24px',
+      borderRadius: '12px',
+      boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.05)',
+      border: '1px solid #e2e8f0'
+    },
+    cardLabel: {
+      fontSize: '0.875rem',
+      fontWeight: '600',
+      color: '#64748b',
+      textTransform: 'uppercase',
+      letterSpacing: '0.05em',
+      marginBottom: '8px'
+    },
+    cardValue: {
+      fontSize: '1.875rem',
+      fontWeight: '700',
+      color: '#0f172a'
+    },
+    tableContainer: {
+      backgroundColor: '#ffffff',
+      borderRadius: '12px',
+      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.05)',
+      border: '1px solid #e2e8f0',
+      overflow: 'hidden'
+    },
+    table: {
+      width: '100%',
+      borderCollapse: 'collapse',
+      textAlign: 'left'
+    },
+    th: {
+      backgroundColor: '#f1f5f9',
+      padding: '16px 24px',
+      fontSize: '0.875rem',
+      fontWeight: '600',
+      color: '#475569',
+      textTransform: 'uppercase',
+      letterSpacing: '0.05em',
+      borderBottom: '1px solid #e2e8f0'
+    },
+    tr: {
+      borderBottom: '1px solid #f1f5f9',
+      transition: 'background-color 0.2s ease'
+    },
+    td: {
+      padding: '16px 24px',
+      fontSize: '1rem',
+      color: '#334155'
+    },
+    badge: (qty) => ({
+      padding: '4px 8px',
+      borderRadius: '6px',
+      fontSize: '0.8125rem',
+      fontWeight: '600',
+      backgroundColor: qty > 5 ? '#e2fbe8' : qty > 0 ? '#fff3cd' : '#ffe3e3',
+      color: qty > 5 ? '#15803d' : qty > 0 ? '#856404' : '#b91c1c'
+    }),
+    centerState: {
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      minHeight: '400px',
+      fontFamily: 'sans-serif',
+      color: '#64748b'
+    },
+    errorText: {
+      color: '#dc2626',
+      backgroundColor: '#fef2f2',
+      padding: '16px 24px',
+      borderRadius: '8px',
+      border: '1px solid #fee2e2',
+      fontWeight: '500'
     }
   };
 
-  // Setup interval polling
-  useEffect(() => {
-    fetchData(); // initial fetch
-
-    if (fetchInterval === 0) return; // paused
-
-    const intervalId = setInterval(() => {
-      fetchData();
-    }, fetchInterval);
-
-    return () => clearInterval(intervalId);
-  }, [fetchInterval]);
-
-  // Format currency
-  const formatCurrency = (val) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      maximumFractionDigits: 0
-    }).format(val);
-  };
-
-  // Render SVG Sparkline
-  const renderSparkline = (history) => {
-    if (!history || history.length === 0) return null;
-    const minVal = Math.min(...history);
-    const maxVal = Math.max(...history);
-    const valRange = maxVal - minVal || 1;
-    
-    const width = 80;
-    const height = 20;
-    const points = history.map((val, idx) => {
-      const x = (idx / (history.length - 1)) * width;
-      // Invert y, leave a 2px padding top/bottom
-      const y = (height - 2) - ((val - minVal) / valRange) * (height - 4);
-      return `${x},${y}`;
-    }).join(' ');
-
-    const lastVal = history[history.length - 1];
-    let color = '#10b981'; // emerald
-    if (lastVal < 80) color = '#f59e0b'; // amber
-    if (lastVal < 50) color = '#f43f5e'; // rose
-
+  // --- Conditional Rendering for States ---
+  if (loading) {
     return (
-      <svg className="sparkline-svg" width={width} height={height}>
-        <polyline points={points} stroke={color} />
-      </svg>
+      <div style={styles.centerState}>
+        <div className="spinner" style={{ marginBottom: '16px', fontSize: '1.25rem', fontWeight: '500' }}>
+          Loading live dashboard data...
+        </div>
+      </div>
     );
-  };
+  }
+
+  if (error) {
+    return (
+      <div style={styles.centerState}>
+        <div style={styles.errorText}>⚠️ Error: {error}</div>
+      </div>
+    );
+  }
 
   return (
-    <div className="dashboard-container">
-      {/* Header section */}
-      <header>
-        <div className="header-title-area">
-          <h1>
-            <FileSpreadsheet size={32} style={{ color: '#06b6d4' }} />
-            LiveStream Sheets
-          </h1>
-          <p>Real-time fullstack simulation showing Cloudflare Pages Functions connecting to React frontend.</p>
-        </div>
-
-        <div className="header-controls">
-          <div className="speed-control">
-            <span>Update Stream:</span>
-            <select 
-              value={fetchInterval} 
-              onChange={(e) => setFetchInterval(Number(e.target.value))}
-              className="speed-select"
-            >
-              <option value={1000}>Fast (1s)</option>
-              <option value={3000}>Normal (3s)</option>
-              <option value={5000}>Slow (5s)</option>
-              <option value={0}>Paused</option>
-            </select>
-          </div>
-
-          <button 
-            onClick={fetchData} 
-            className="btn btn-primary"
-            disabled={isLoading}
-          >
-            <RefreshCw size={16} className={isLoading ? 'spin-icon' : ''} style={{
-              animation: isLoading ? 'spin 1s linear infinite' : 'none'
-            }} />
-            Sync Now
-          </button>
-        </div>
+    <div style={styles.container}>
+      {/* Header Block */}
+      <header style={styles.header}>
+        <h1 style={styles.title}>Live Inventory Dashboard</h1>
+        <p style={styles.subtitle}>Real-time updates pulled straight from Google Sheets</p>
       </header>
 
-      {/* Styled Inline Keyframes for loading spinner */}
-      <style>{`
-        @keyframes spin {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-      `}</style>
-
-      {/* System Health Metric Cards */}
-      <section className="health-grid" aria-label="System Health Metrics">
-        <div className="glass-panel health-card cpu">
-          <div className="card-icon">
-            <Cpu size={24} />
-          </div>
-          <div className="card-info">
-            <span className="label">API Cluster CPU</span>
-            <span className="value">{systemHealth.cpuUsage}%</span>
-          </div>
+      {/* Metrics Summary Grid */}
+      <section style={styles.statsGrid}>
+        <div style={styles.card}>
+          <div style={styles.cardLabel}>Unique Products</div>
+          <div style={styles.cardValue}>{totalItems}</div>
         </div>
-
-        <div className="glass-panel health-card network">
-          <div className="card-icon">
-            <Wifi size={24} />
-          </div>
-          <div className="card-info">
-            <span className="label">Ingress Load</span>
-            <span className="value">{systemHealth.networkLoad} Mbps</span>
-          </div>
+        <div style={styles.card}>
+          <div style={styles.cardLabel}>Total Stock Vol.</div>
+          <div style={styles.cardValue}>{totalQuantity} units</div>
         </div>
-
-        <div className="glass-panel health-card latency">
-          <div className="card-icon">
-            <Clock size={24} />
-          </div>
-          <div className="card-info">
-            <span className="label">DB Latency</span>
-            <span className="value">{systemHealth.dbLatencyMs} ms</span>
-          </div>
-        </div>
-      </section>
-
-      {/* Error Alert Display */}
-      {errorMsg && (
-        <div className="glass-panel" style={{
-          padding: '1rem 1.5rem',
-          borderLeft: '4px solid var(--accent-rose)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '1rem',
-          background: 'rgba(244, 63, 94, 0.08)'
-        }}>
-          <AlertTriangle size={24} style={{ color: 'var(--accent-rose)' }} />
-          <div>
-            <h4 style={{ fontWeight: 600 }}>Backend Connection Offline</h4>
-            <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>{errorMsg}</p>
-          </div>
-        </div>
-      )}
-
-      {/* Main spreadsheet data panel */}
-      <main className="main-grid">
-        <div className="glass-panel table-panel">
-          <div className="table-header">
-            <h2 className="table-title">
-              <Layers size={18} style={{ color: 'var(--accent-cyan)' }} />
-              Active Project Records
-            </h2>
-            <div className={`connection-pill ${isConnected ? 'connected' : ''}`}>
-              <Activity size={12} />
-              {isConnected ? 'STREAMING REAL-TIME' : 'DISCONNECTED'}
-            </div>
-          </div>
-
-          <div className="table-wrapper">
-            <table className="excel-table">
-              <thead>
-                <tr>
-                  <th>ROW ID</th>
-                  <th>PROJECT NAME</th>
-                  <th>CATEGORY</th>
-                  <th>BUDGET</th>
-                  <th>PROGRESS</th>
-                  <th>TEAM</th>
-                  <th>EFFICIENCY</th>
-                  <th>PERFORMANCE TREND</th>
-                </tr>
-              </thead>
-              <tbody>
-                {records.length > 0 ? (
-                  records.map((record) => {
-                    const isRowUpdated = updatedRowIds.has(record.id);
-                    
-                    // Efficiency color coding class
-                    let effColorClass = 'green';
-                    if (record.efficiency < 85) effColorClass = 'yellow';
-                    if (record.efficiency < 70) effColorClass = 'red';
-
-                    return (
-                      <tr 
-                        key={record.id} 
-                        className={isRowUpdated ? 'flash-update' : ''}
-                      >
-                        <td className="id-cell">{record.id}</td>
-                        <td style={{ fontWeight: 500 }}>{record.name}</td>
-                        <td>
-                          <span className={`category-tag ${record.category.toLowerCase().replace(/ & /g, '_').replace(/ /g, '-')}`}>
-                            {record.category}
-                          </span>
-                        </td>
-                        <td style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-                          {formatCurrency(record.budget)}
-                        </td>
-                        <td>
-                          <div className="progress-container">
-                            <div className="progress-bar-bg">
-                              <div 
-                                className="progress-bar-fill" 
-                                style={{ width: `${record.progress}%` }}
-                              />
-                            </div>
-                            <span className="progress-text">{record.progress}%</span>
-                          </div>
-                        </td>
-                        <td>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                            <Users size={14} style={{ color: 'var(--text-muted)' }} />
-                            <span style={{ fontFamily: 'JetBrains Mono, monospace' }}>{record.activeTeam}</span>
-                          </div>
-                        </td>
-                        <td>
-                          <span className={`metric-badge ${effColorClass}`}>
-                            <TrendingUp size={14} />
-                            {record.efficiency}%
-                          </span>
-                        </td>
-                        <td>
-                          <div style={{ display: 'flex', alignItems: 'center', minHeight: '24px' }}>
-                            {renderSparkline(record.history)}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                ) : (
-                  <tr>
-                    <td colSpan="8" style={{ textAlign: 'center', padding: '3rem 0', color: 'var(--text-muted)' }}>
-                      {isLoading ? 'Fetching project records...' : 'No data available.'}
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </main>
-
-      {/* Footer statistics */}
-      <footer>
-        <div>
-          <span>Last Sync: {lastUpdated ? lastUpdated.toLocaleTimeString() : 'Never'}</span>
-        </div>
-        <div>
-          <span>Powered by React + Cloudflare Pages Functions</span>
-        </div>
-      </footer>
-    </div>
-  );
-}
+        <div style={styles.card}>
+          <div
